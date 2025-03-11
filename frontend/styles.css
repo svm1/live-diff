@@ -16,3 +16,54 @@ pre {
     max-width: 600px;
     margin: auto;
 }
+.track {
+    border: 1px solid #ccc;
+    margin-bottom: 10px;
+    padding: 10px;
+}
+
+/* .clip-timeline, .note-timeline {
+    gap: 5px;
+    margin-top: 5px;
+    padding: 5px;
+    border-top: 1px solid #ddd;
+}
+
+.clip {
+    height: 50px; 
+    border-radius: 3px;
+    display: inline-block;
+}
+*/
+
+.note {
+    position: absolute;
+    height: 8px;
+    min-width: 5px;  
+    border-radius: 2px;
+    background-color: lightblue; 
+} 
+
+/* working clips but no notes */
+
+.clip-timeline, .note-timeline {
+    display: flex;
+    gap: 5px;
+    margin-top: 5px;
+    padding: 5px;
+    border-top: 1px solid #ddd;
+}
+
+.clip {
+    height: 20px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+/* .note {
+    position: absolute;
+    height: 8px;
+    min-width: 5px;  
+    border-radius: 2px;
+} */
+

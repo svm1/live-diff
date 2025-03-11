@@ -1,7 +1,9 @@
 import os
+import sys
 import argparse
 import gzip
 import glob
+import json
 import xml.etree.ElementTree as ET
 from xmldiff import main
 from lxml import etree
@@ -22,7 +24,7 @@ def remove_path_and_extension(filename):
 def delete_XML_files():
     for file in glob.glob("xml-tmp/*.XML"):
         os.remove(file)
-        print(f"Deleted {file}")
+        sys.stderr.write(f"Deleted {file}")
 
 def midi_to_note(midi_number):
     """Converts a MIDI note number to a human-readable note name."""
@@ -109,14 +111,14 @@ class LiveSet:
     def unpack(self):
         """Extracts XML from ALS file."""
 
-        # print('unpacking ALS')
-        # print(f"ALS filename (arg): {self.als_filename}")
+        # sys.stderr.write('unpacking ALS')
+        # sys.stderr.write(f"ALS filename (arg): {self.als_filename}")
 
         with gzip.open(self.als_filename, 'rb') as unzipped_file:
             content = unzipped_file.read()
             self.xml_filename = os.path.join('xml-tmp', remove_path_and_extension(self.als_filename) + '.xml')
 
-            # print(f"XML filename: {self.xml_filename}")
+            # sys.stderr.write(f"XML filename: {self.xml_filename}")
 
             # Ensure the directory exists before writing
             os.makedirs('xml-tmp', exist_ok=True)
@@ -138,7 +140,7 @@ class LiveSet:
                 name = name_elem.get('Value')
 
                 # DEBUG: Check if track appears multiple times
-                # print(f"Processing track: {name} (Parent: {track.tag})")
+                # sys.stderr.write(f"Processing track: {name} (Parent: {track.tag})")
 
                 if track.tag == 'GroupTrack':
                     track_obj = Track(name, 'G')
@@ -154,13 +156,13 @@ class LiveSet:
                 elif track.tag == "ReturnTrack":
                     track_obj = Track(name, 'R')
 
-                # print(f"Appending track: {track_obj.name}\n")
+                # sys.stderr.write(f"Appending track: {track_obj.name}\n")
                 self.tracks.append(track_obj)
 
         # DEBUG: Print the final list of parsed tracks
-        # print(f"\nFinal parsed tracks for {xml_filename}:")
+        # sys.stderr.write(f"\nFinal parsed tracks for {xml_filename}:")
         # for track in self.tracks:
-        #     print(f" - {track.name}")
+        #     sys.stderr.write(f" - {track.name}")
 
     def extract_clips(self, track, clip_type):
         """Extracts clips and their MIDI notes (if applicable)."""
@@ -185,42 +187,50 @@ def convert_to_bars_beats(time):
 
 
 def diff_tracks(track1, track2):
-    """Compares two Track objects and prints differences in clips and MIDI notes."""
-    print(f"\n🎼 **Comparing track:** {track1.name}")
+    """Compares two Track objects and returns structured diff data."""
+    
+    track_diff = {
+        "added_clips": [],
+        "removed_clips": [],
+        "note_changes": []
+    }
 
     if track1.type != track2.type:
-        print(f"⚠️ Type mismatch: {track1.type} vs {track2.type}")
+        track_diff["type_mismatch"] = f"{track1.type} vs {track2.type}"
 
     added_clips, removed_clips = diff_clips(track1.clips, track2.clips)
 
-    if added_clips:
-        print("➕ **Added Clips to set 2:**", added_clips)
-    if removed_clips:
-        print("➖ **Removed Clips from set 2:**", removed_clips)
-    if not added_clips and not removed_clips:
-        print("✅ No structural changes in clip arrangement.")
+    track_diff["added_clips"] = list(added_clips)
+    track_diff["removed_clips"] = list(removed_clips)
 
-    if track1.type == "M":
-        diff_midi_clip_contents(track1, track2)  # Deep MIDI diff
+    if track1.type == "M":  # Only check MIDI changes for MIDI tracks
+        track_diff["note_changes"] = diff_midi_clip_contents(track1, track2)
+
+    return track_diff
 
 
 def diff_clips(clips1, clips2):
-    """Compares two clip lists based on start time and duration."""
+    """Compares two clip lists and returns added, removed, and unchanged clips."""
     set1 = {(clip.start_time, clip.end_time - clip.start_time) for clip in clips1}
     set2 = {(clip.start_time, clip.end_time - clip.start_time) for clip in clips2}
 
     added = set2 - set1  # Clips in the new version but not in the old
     removed = set1 - set2  # Clips that were in the old version but not in the new
 
-    return added, removed
+    # Unchanged clips exist in both sets
+    unchanged = set1 & set2  
+
+    return added, removed, unchanged
 
 
 def diff_midi_clip_contents(track1, track2):
-    """Compares MIDI note contents of matching clips."""
-    print(f"\n🎵 **Comparing MIDI content for:** {track1.name}")
-
+    """Compares MIDI note contents of matching clips and returns structured diff data."""
+    sys.stderr.write(f"\n🎵 **Comparing MIDI content for:** {track1.name}\n")
+    
     num_clips = min(len(track1.clips), len(track2.clips))  # Compare common clips
-    print(f"comparing {num_clips} clips for track {track1.name}")
+    sys.stderr.write(f"comparing {num_clips} clips for track {track1.name}\n")
+
+    clip_diffs = []
 
     for i in range(num_clips):
         clip1 = track1.clips[i]
@@ -233,52 +243,80 @@ def diff_midi_clip_contents(track1, track2):
         removed_notes = old_set - new_set
         modified_notes = []
 
-        # Mark notes to be removed AFTER iteration
+        # Track notes to be removed after iteration
         to_remove = set()
 
         for old_note in removed_notes:
             match = next((new_note for new_note in added_notes if new_note.time == old_note.time), None)
 
             if match:
-                modified_notes.append((old_note, match))
+                modified_notes.append({
+                    "old_note": midi_to_note(old_note.midi_key),
+                    "new_note": midi_to_note(match.midi_key),
+                    "duration_change": f"{old_note.duration} → {match.duration}" if old_note.duration != match.duration else 0,
+                    "velocity_change": f"{old_note.velocity} → {match.velocity}" if old_note.velocity != match.velocity else 0,
+                    "bar": convert_to_bars_beats(old_note.time)
+                })
                 added_notes.remove(match)
-                to_remove.add(old_note)  # Mark old note for removal
+                to_remove.add(old_note)
 
-        # Remove marked notes outside the loop
+        # Remove marked notes
         removed_notes -= to_remove
 
-        if added_notes or removed_notes or modified_notes:
-            print(f"🎹 **Clip {i} MIDI differences:**")
+        # Append the final differences for this clip
+        clip_diffs.append({
+            "clip_index": i,
+            "added_notes": [
+                {
+                    "note": midi_to_note(n.midi_key),
+                    "bar": convert_to_bars_beats(n.time),
+                    "duration": n.duration,
+                    "velocity": n.velocity
+                } for n in added_notes
+            ],
+            "removed_notes": [
+                {
+                    "note": midi_to_note(n.midi_key),
+                    "bar": convert_to_bars_beats(n.time),
+                    "duration": n.duration,
+                    "velocity": n.velocity
+                } for n in removed_notes
+            ],
+            "modified_notes": modified_notes
+        })
 
-            for note in added_notes:
-                print(f"   ➕ Note {midi_to_note(note.midi_key)} at **Bar {convert_to_bars_beats(note.time)}** (Dur: {note.duration}, Vel: {note.velocity})")
+    return clip_diffs
 
-            for note in removed_notes:
-                print(f"   ➖ Note {midi_to_note(note.midi_key)} at **Bar {convert_to_bars_beats(note.time)}** (Dur: {note.duration}, Vel: {note.velocity})")
 
-            for old_note, new_note in modified_notes:
-                changes = []
-                
-                if old_note.midi_key != new_note.midi_key:
-                    changes.append(f"changed from {midi_to_note(old_note.midi_key)} to {midi_to_note(new_note.midi_key)}")
-                
-                if old_note.duration != new_note.duration:
-                    if new_note.duration > old_note.duration:
-                        changes.append(f"extended from {old_note.duration} to {new_note.duration} beats")
-                    else:
-                        changes.append(f"shortened from {old_note.duration} to {new_note.duration} beats")
+def compare_live_sets(als1, als2):
+    """Compares two Ableton Live Sets and returns JSON results."""
+    diff_result = {"tracks": {}}
 
-                if old_note.velocity != new_note.velocity:
-                    if new_note.velocity > old_note.velocity:
-                        changes.append(f"velocity increased from {old_note.velocity} to {new_note.velocity}")
-                    else:
-                        changes.append(f"velocity decreased from {old_note.velocity} to {new_note.velocity}")
+    # Ensure all tracks from ALS1 are accounted for
+    for track1 in als1.tracks:
+        sys.stderr.write("\n__________________________________\n")
+        track2 = next((t for t in als2.tracks if t.name == track1.name), None)
 
-                change_description = ", ".join(changes)
-                print(f"   🔄 Note at **Bar {convert_to_bars_beats(old_note.time)}** {change_description}.")
-
+        if not track2:
+            diff_result["tracks"][track1.name] = {"status": "removed"}
         else:
-            print(f"✅ **Clip {i} has no MIDI differences.**")
+            added_clips, removed_clips, unchanged_clips = diff_clips(track1.clips, track2.clips)
+
+            note_changes = diff_midi_clip_contents(track1, track2) or []  # Always return a list
+
+            diff_result["tracks"][track1.name] = {
+                "added_clips": list(added_clips),
+                "removed_clips": list(removed_clips),
+                "unchanged_clips": list(unchanged_clips),
+                "note_changes": note_changes
+            }
+
+    # Ensure all tracks from ALS2 that were not in ALS1 are marked as "added"
+    for track2 in als2.tracks:
+        if track2.name not in diff_result["tracks"]:
+            diff_result["tracks"][track2.name] = {"status": "added"}
+
+    return json.dumps(diff_result, indent=2)
 
 
 
@@ -288,7 +326,7 @@ if __name__ == '__main__':
     parser.add_argument("file1", help="Path to the first ALS file")
     parser.add_argument("file2", help="Path to the second ALS file")
     args = parser.parse_args()
-    # print(args)
+    # sys.stderr.write(args)
 
     # Process First ALS File
     live_set_1 = LiveSet(args.file1)
@@ -305,16 +343,21 @@ if __name__ == '__main__':
     # live_set_2 = LiveSet("test3_unpacked.xml")
 
     # Diff
-    print(f"Comparing {args.file1} with {args.file2}...")
+    sys.stderr.write(f"Comparing {args.file1} with {args.file2}...")
 
-    print("Tracks in ALS1:", [track.name for track in live_set_1.tracks])
-    print("Tracks in ALS2:", [track.name for track in live_set_2.tracks])
+    sys.stderr.write(f"Tracks in ALS1: {[track.name for track in live_set_1.tracks]}\n")
+    sys.stderr.write(f"Tracks in ALS2: {[track.name for track in live_set_2.tracks]}\n")
 
-    for track1 in live_set_1.tracks:
-        matching_track = next((track2 for track2 in live_set_2.tracks if track2.name == track1.name), None)
-        if matching_track:
-            print("\n__________________________________")
-            # print('about to compare track', track1.name)
-            diff_tracks(track1, matching_track)
+    diff_result = compare_live_sets(live_set_1, live_set_2)
+    sys.stdout.write(diff_result)  # No newline, only pure JSON
+    sys.stdout.flush()  # Ensure it's written immediately
+    
+    # OG working DIFF - this console output fed to front-end
+    # for track1 in live_set_1.tracks:
+    #     matching_track = next((track2 for track2 in live_set_2.tracks if track2.name == track1.name), None)
+    #     if matching_track:
+    #         sys.stderr.write("\n__________________________________")
+    #         # sys.stderr.write('about to compare track', track1.name)
+    #         diff_tracks(track1, matching_track)
 
     

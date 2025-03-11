@@ -18,7 +18,7 @@ app.whenReady().then(() => {
         }
     });
     mainWindow.loadFile('frontend/index.html');
-    // mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
     console.log('loaded')
 });
 
@@ -51,17 +51,43 @@ ipcMain.handle('run-diff', async (event, file1, file2) => {
     console.log(`Running diff on: ${file1} vs ${file2}`);
 
     return new Promise((resolve, reject) => {
-        const scriptPath = path.join(__dirname, 'backend', 'parse_als.py');
-        exec(`python ${scriptPath} "${file1}" "${file2}"`, (error, stdout, stderr) => {
-            console.log(`[PYTHON OUT]: ${stdout}`);  // Logs Python output to Node console
-            console.error(`[PYTHON ERR]: ${stderr}`); // Logs Python errors (if any)
-
+        exec(`python backend/parse_als.py "${file1}" "${file2}"`, (error, stdout, stderr) => {
             if (error) {
-                reject(stderr); // If Python script fails, send error to UI
+                reject(stderr);
             } else {
-                resolve(stdout); // Send Python output to UI
+                // resolve(JSON.parse(stdout)); // Parse JSON output
+                try {
+                    const diffResult = JSON.parse(stdout.trim());  // Remove extra newlines
+                    resolve(diffResult);
+                } catch (err) {
+                    reject(`Error parsing JSON: ${err.message}\nRaw Output:\n${stdout}`);
+                }
             }
         });
     });
 });
+
+// OG run-diff for receiving Python console output
+
+// ipcMain.handle('run-diff', async (event, file1, file2) => {
+//     if (!file1 || !file2) {
+//         return 'Please select two ALS files first!';
+//     }
+
+//     console.log(`Running diff on: ${file1} vs ${file2}`);
+
+//     return new Promise((resolve, reject) => {
+//         const scriptPath = path.join(__dirname, 'backend', 'parse_als.py');
+//         exec(`python ${scriptPath} "${file1}" "${file2}"`, (error, stdout, stderr) => {
+//             console.log(`[PYTHON OUT]: ${stdout}`);  // Logs Python output to Node console
+//             console.error(`[PYTHON ERR]: ${stderr}`); // Logs Python errors (if any)
+
+//             if (error) {
+//                 reject(stderr); // If Python script fails, send error to UI
+//             } else {
+//                 resolve(stdout); // Send Python output to UI
+//             }
+//         });
+//     });
+// });
 
