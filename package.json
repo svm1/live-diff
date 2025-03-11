@@ -1,0 +1,27 @@
+{
+  "name": "live_diff",
+  "productName": "LiveDiff",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/svm1/live-diff.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/svm1/live-diff/issues"
+  },
+  "homepage": "https://github.com/svm1/live-diff#readme",
+  "description": "",
+  "dependencies": {
+    "child_process": "^1.0.2",
+    "electron": "^35.0.1",
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7"
+  }
+}

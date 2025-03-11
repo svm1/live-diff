@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ableton Live Set Diff Tool</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>Ableton Live Set Diff Tool</h1>
+
+    <div>
+        <button id="select-file-1">Select First ALS File</button>
+        <span id="file-path-1">No file selected</span>
+    </div>
+
+    <div>
+        <button id="select-file-2">Select Second ALS File</button>
+        <span id="file-path-2">No file selected</span>
+    </div>
+
+    <button id="run-diff">Run Diff</button>
+    <pre id="diff-output"></pre>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
